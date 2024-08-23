@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+from argparse import ArgumentParser
+from pathlib import Path
+import sys
+
+
+def main():
+    options = get_options()
+    if options is None:
+        # They wanted to list something
+        return
+    
+    proteome_file = get_proteome_file(options.proteome)
+    print("Proteome file is",proteome_file)
+
+    template_file = get_template_file(options.template)
+    print("Template file is",template_file)
+
+    print(f"Writing mqpar to {Path('.').resolve()}/mqpar.xml")
+
+    # Get the full path for all raw files.  We'll put the putput
+    # in the current folder.
+    raw_file_paths = []
+
+    raw_files = options.raw
+
+    for file in raw_files:
+        file = Path(file)
+        if not file.exists():
+            raise Exception(file+" doesn't exist")
+
+        raw_file_paths.append(file.resolve())
+
+
+    cores = options.cores
+    if cores == 0:
+        cores = len(raw_file_paths)
+
+    if cores > 30:
+        cores = 30
+
+
+    create_template(template_file,proteome_file,raw_file_paths,cores)
+
+
+
+    print("Command to start searching:\n")
+    print(f"ssub -o mqcmd.log --cores={cores} --mem={cores*2}G maxquant_cmd mqpar.xml\n\n")
+
+    
+def create_template(template_file, proteome_file, raw_files, cpus):
+    # Information we need to update
+    # fastafiles (plus search structure)
+    # filePaths
+    # experiments
+    # fractions
+    # ptms
+    # paramgroupindices
+    # referencechannel
+    # numThreads
+
+    with open("mqpar.xml","wt", encoding="utf8") as out:
+        with open(template_file,"rt",encoding="utf8") as infh:
+
+            for line in infh:
+                line = line.strip()
+                if "<fastaFiles>" in line:
+                    print(line, file=out)
+                    print(f"""<FastaFileInfo>
+         <fastaFilePath>{proteome_file}</fastaFilePath>
+         <identifierParseRule>>.*\|(.*)\|</identifierParseRule>
+         <descriptionParseRule>>(.*)</descriptionParseRule>
+         <taxonomyParseRule></taxonomyParseRule>
+         <variationParseRule></variationParseRule>
+         <modificationParseRule></modificationParseRule>
+         <taxonomyId>0</taxonomyId>
+      </FastaFileInfo>
+""", file=out)
+                    
+                elif "<filePaths>" in line:
+                    print(line,file=out)
+                    for file in raw_files:
+                        print(f"<string>{str(file)}</string>", file=out)
+
+                elif "<experiments>" in line:
+                    print(line,file=out)
+                    for _ in raw_files:
+                        print(f"<string></string>", file=out)
+                elif "<fractions>" in line:
+                    print(line,file=out)
+                    for _ in raw_files:
+                        print(f"<short>1</short>", file=out)
+                elif "<ptms>" in line:
+                    print(line,file=out)
+                    for _ in raw_files:
+                        print(f"<boolean>False</boolean>", file=out)
+                elif "<paramGroupIndices>" in line:
+                    print(line,file=out)
+                    for _ in raw_files:
+                        print(f"<int>0</int>", file=out)
+                elif "<referenceChannel>" in line:
+                    print(line,file=out)
+                    for _ in raw_files:
+                        print(f"<string></string>", file=out)
+                        
+                elif "<numThreads>" in line:
+                    print(f"<numThreads>{cpus}</numThreads>", file=out)
+
+                else:
+                    print(line, file=out)
+
+
+
+def get_template_file(name):
+    # The name here could be the prefix to a file in 
+    # the templates directory, or it could be an actual
+    # file location.
+
+    if Path(name).exists():
+        return name
+    
+    template_file = Path(__file__).resolve().parent / "templates" / (name+".xml")
+
+    if template_file.exists():
+        return template_file
+
+    else:
+        raise Exception("Couldn't find template called "+name)
+
+
+
+def get_proteome_file(name):
+    # The name here could be the prefix to a file in 
+    # the proteomes directory, or it could be an actual
+    # file location.
+
+    if Path(name).exists():
+        return name
+    
+    proteome_dir = Path(__file__).resolve().parent / "proteomes"
+    proteome_files = list(proteome_dir.glob(name+"*.fa"))
+
+    if len(proteome_files) == 1:
+        return proteome_files[0]
+    
+    elif len(proteome_files) > 1:
+        raise Exception("Ambiguous proteome name")
+
+    else:
+        raise Exception("Couldn't find proteome called "+name)
+
+def list_templates():
+    # We need to find the templates directory
+    template_dir = Path(__file__).resolve().parent / "templates"
+
+    template_files = template_dir.glob("*xml")
+
+    print("Available templates\n===================\n")
+
+    for file in template_files:
+        print(file.name.removesuffix(".xml"))
+
+    print("")
+
+
+def list_proteomes():
+    # We need to find the proteomes directory
+    proteomes_dir = Path(__file__).resolve().parent / "proteomes"
+
+    proteome_files = proteomes_dir.glob("*fa")
+
+    print("Available proteomes\n===================\n")
+
+    for file in proteome_files:
+        print(file.name.split("_")[0], file.name.removesuffix(".fa"), sep="\t")
+
+    print("")
+
+
+
+def get_options():
+
+    # Check some options in advance
+    if "--list_templates" in sys.argv:
+        list_templates()
+        return None
+
+
+    if "--list_proteomes" in sys.argv:
+        list_proteomes()
+        return None
+
+
+    parser = ArgumentParser("Run maxquant from a template")
+
+    parser.add_argument("raw", help="RAW files to process", type=str, nargs="+")
+    parser.add_argument("--template", help="MaxQuant Template to use", type=str, required=True)
+    parser.add_argument("--cores", help="Number of CPUs to use (default nraw)", type=int, default=0)
+    parser.add_argument("--list_templates", action="store_true", help="Show the available templates")
+    parser.add_argument("--proteome", type=str, help="Which species proteome to use", required=True)
+    parser.add_argument("--list_proteomes",action="store_true",help="List the available proteomes")
+
+    options = parser.parse_args()
+
+    return options
+
+
+
+if __name__ == "__main__":
+    main()
