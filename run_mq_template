@@ -167,12 +167,12 @@ def list_proteomes():
     # We need to find the proteomes directory
     proteomes_dir = Path(__file__).resolve().parent / "proteomes"
 
-    proteome_files = proteomes_dir.glob("*fa")
+    proteome_files = sorted(proteomes_dir.glob("*fa"))
 
     print("Available proteomes\n===================\n")
 
     for file in proteome_files:
-        print(file.name.split("_")[0], file.name.removesuffix(".fa"), sep="\t")
+        print(f"{file.name.split('_')[0]:<15}{file.name.removesuffix('.fa')}")
 
     print("")
 
