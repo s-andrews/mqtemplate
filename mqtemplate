@@ -16,7 +16,7 @@ def main():
     template_file = get_template_file(options.template)
     print("Template file is",template_file)
 
-    print(f"Writing mqpar to {Path('.').resolve()}/mqpar.xml")
+    print(f"Writing mqpar to {Path('.').absolute()}/mqpar.xml")
 
     # Get the full path for all raw files.  We'll put the putput
     # in the current folder.
